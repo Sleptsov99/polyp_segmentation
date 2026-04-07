@@ -50,7 +50,6 @@ polyp-segmentation/
 ├── model.py        # архитектура U-Net
 ├── train.py        # цикл обучения
 ├── evaluate.py     # визуализация результатов
-├── best_model.pth  # лучшие веса модели
 └── results.png     # примеры предсказаний
 ```
 
