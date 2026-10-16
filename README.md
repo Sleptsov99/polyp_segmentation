@@ -14,16 +14,21 @@
 | Best Val Loss | **0.0942** |
 | Эпох          | 30         |
 
+> Эти цифры получены в первой версии (разбиение 80/20, без тестовой выборки) и измерены на валидации, по которой выбирался чекпоинт, поэтому немного завышены. В этой версии после обучения считается `test_dice` на 100 отложенных снимках.
+
 ---
 
 ## Датасет
 
-[Kvasir-SEG](https://www.kaggle.com/datasets/abdallahwagih/kvasir-dataset-for-classification-and-segmentation) — 1000 колоноскопических снимков с попиксельными масками полипов, размеченными врачами.
+[Kvasir-SEG](https://datasets.simula.no/kvasir-seg/) — 1000 колоноскопических снимков с попиксельными масками полипов, размеченными врачами (Simula Research Laboratory). Есть также [зеркало на Kaggle](https://www.kaggle.com/datasets/abdallahwagih/kvasir-dataset-for-classification-and-segmentation).
 
-| Выборка    | Снимков |
-|------------|---------|
-| Обучение   | 800     |
-| Валидация  | 200     |
+Снимки и маски сопоставляются по имени файла. Разбиение фиксированное (`seed=42`):
+
+| Выборка    | Снимков | Назначение                          |
+|------------|---------|-------------------------------------|
+| Обучение   | 800     | обучение модели                     |
+| Валидация  | 100     | выбор лучшей эпохи (чекпоинта)      |
+| Тест       | 100     | финальная оценка, в обучении не участвует |
 
 ---
 
@@ -84,7 +89,7 @@ Accuracy не подходит из-за дисбаланса классов: п
 | Эпох          | 30                  |
 | Оптимизатор   | Adam                |
 | Learning rate | 1e-4                |
-| Val split     | 20%                 |
+| Val / Test split | 10% / 10%        |
 | Чекпоинт      | эпоха с лучшим val Dice |
 
 **Аугментации на обучении** (Albumentations):
@@ -108,7 +113,9 @@ Accuracy не подходит из-за дисбаланса классов: п
 
 - **Параметры**: image size, batch size, epochs, learning rate, энкодер, архитектура
 - **Метрики по эпохам**: `train_loss`, `train_dice`, `val_loss`, `val_dice`
+- **Итоговые метрики**: `best_val_dice`, `test_loss`, `test_dice`
 - **Артефакты**: `best_model.pth`, полная модель через `mlflow.pytorch.log_model`
+- **Хранилище**: `mlflow.db` (SQLite) и `mlartifacts/` в папке репозитория
 
 ---
 
@@ -116,41 +123,51 @@ Accuracy не подходит из-за дисбаланса классов: п
 
 ```
 polyp_segmentation/
-├── config.py      — гиперпараметры и пути к данным
-├── dataset.py     — Dataset, аугментации, фабрика DataLoader
-├── model.py       — сборка U-Net (segmentation-models-pytorch)
-├── train.py       — цикл обучения с MLflow-логированием
-├── evaluate.py    — инференс и визуализация предсказаний
-└── results.png    — примеры (оригинал / разметка / предсказание)
+├── config.py         — гиперпараметры и пути к данным
+├── download_data.py  — скачивание и распаковка Kvasir-SEG в ./data
+├── dataset.py        — Dataset, аугментации, разбиение train/val/test, DataLoader'ы
+├── model.py          — сборка U-Net (segmentation-models-pytorch)
+├── metrics.py        — Dice coefficient
+├── train.py          — цикл обучения с MLflow-логированием + оценка на тесте
+├── evaluate.py       — оценка на тесте и визуализация предсказаний
+├── requirements.txt  — зависимости
+└── results.png       — примеры (оригинал / разметка / предсказание)
 ```
 
 ---
 
 ## Запуск
 
-**Установка зависимостей:**
 ```bash
-pip install torch torchvision opencv-python albumentations scikit-learn \
-            segmentation-models-pytorch matplotlib tqdm mlflow
+git clone https://github.com/Sleptsov99/polyp_segmentation.git
+cd polyp_segmentation
+git checkout version_2
+
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt    # для GPU сначала поставьте torch с https://pytorch.org
+
+python download_data.py            # скачает Kvasir-SEG в ./data/Kvasir-SEG
+python train.py                    # обучение + оценка лучшего чекпоинта на тесте
+python evaluate.py                 # метрики на тесте + results.png
 ```
 
-**Путь к датасету** (по умолчанию `~/Downloads/archive/kvasir-seg/Kvasir-SEG`):
+Если автоматическая загрузка недоступна, скачайте архив вручную (официальный сайт или Kaggle) и распакуйте его скриптом:
+```bash
+python download_data.py --zip /path/to/archive.zip
+```
+
+Или укажите путь к уже распакованному датасету (папка, где лежат `images/` и `masks/`):
 ```bash
 export DATA_DIR=/path/to/Kvasir-SEG
 ```
 
-**Обучение:**
-```bash
-python train.py
-```
+**Переменные окружения** (необязательные): `DATA_DIR`, `NUM_EPOCHS`, `NUM_WORKERS` (на Windows при ошибках DataLoader поставьте `0`), `ENCODER_WEIGHTS` (`imagenet` по умолчанию, `none` — без предобученных весов), `CHECKPOINT_PATH`, `MLFLOW_TRACKING_URI`.
 
-**MLflow UI** после обучения:
+**MLflow UI** после обучения (из папки репозитория):
 ```bash
-mlflow ui
+mlflow ui --backend-store-uri sqlite:///mlflow.db
 # → http://localhost:5000
 ```
 
-**Визуализация предсказаний:**
-```bash
-python evaluate.py   # сохраняет results.png
-```
+`python evaluate.py --show` дополнительно откроет окно с картинкой.

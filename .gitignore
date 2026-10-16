@@ -1,0 +1,13 @@
+# Данные и результаты обучения
+data/
+*.pth
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
